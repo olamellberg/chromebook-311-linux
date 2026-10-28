@@ -21,6 +21,11 @@ Uppdaterad 2026-10-28.
   QCA-setup, stänger av styrkretsen (auto-off), bluetoothd slår på den igen, andra setupen blir klar men nästa
   HCI-kommando (0x0c14/0x1002) får tx timeout, sedan "crash the soc", memdump och `Frame reassembly failed (-84)`.
   Varken `modprobe -r hci_uart` eller unbind/bind av `serial0-0` (3 s paus, enable-gpios) hjälper; bara omstart.
+  Efter omstarten var Bluetooth `off-blocked`: systemd-rfkill hade sparat soft=1
+  (`/var/lib/systemd/rfkill/platform-11003000.serial:bluetooth`) och lade tillbaka blocket. `echo 0 >
+  /sys/class/rfkill/rfkill0/soft` (eller av/på i blueman) och `bluetoothctl power on` → fungerar, sökning hittar
+  enheter. Även fungerande BT loggar "Malformed LE Event" / "unexpected HCI Event 0x00": tecken på bitfel på UART:en
+  (3 Mbaud).
 
 ## Historik
 - Byggmiljön är flyttad från WSL2 (trasig: VT-x av) till en projektspecifik container på NUC:en, se `README.md`.
