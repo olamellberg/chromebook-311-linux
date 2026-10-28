@@ -51,7 +51,7 @@ You need a Linux machine (x86-64 or arm64) with Podman or Docker; the whole buil
 loop devices or mounts. It takes 30–60 minutes, most of it running arm64 package scripts under qemu.
 
 ```bash
-git clone <this repo> && cd chromebook-linux
+git clone https://github.com/olamellberg/chromebook-311-linux.git && cd chromebook-311-linux
 sudo bash scripts/host-setup.sh      # once: qemu-aarch64 binfmt with the F flag (Debian/Ubuntu host)
 build/image-build.sh                 # -> out/chromebook-debian-<date>.img.xz
 ```
@@ -88,8 +88,10 @@ over SSH from the first boot; set `SSH_AUTHORIZED_KEY=` (empty) to leave it out.
 1. Write the `.img.xz` to a USB stick (8 GB or more; everything on it is erased): with Etcher or Rufus (DD mode), or
    `xz -dc chromebook-debian-*.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress`.
 2. Plug it into the Chromebook, power on and press **Ctrl+U** at the developer screen.
-3. Log in at the LightDM screen as `user` / `user` (or your `USER_NAME`); you are asked to set a new password.
-   Connect to Wi-Fi from the network icon in the panel.
+3. Log in at the LightDM screen as `user` / `user` (or your `USER_NAME`). The default password has to be changed
+   now: after the message "Changing password for user" the field asks for the **current** password once more, so
+   type `user` again, then the new password twice (Enter after each). Root's password (`debian`) is expired the
+   same way: `su -` in a terminal asks for a new one. Connect to Wi-Fi from the network icon in the panel.
 
 ## 4. Install on the eMMC (replaces ChromeOS)
 
