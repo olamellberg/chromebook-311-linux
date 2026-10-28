@@ -74,7 +74,7 @@ over SSH from the first boot; set `SSH_AUTHORIZED_KEY=` (empty) to leave it out.
 |---|---|---|
 | `USER_NAME`, `USER_PASSWORD` | `user`, same as the name | desktop account (sudo); empty `USER_NAME` makes none |
 | `ROOT_PASSWORD` | `debian` | root password |
-| `PASSWORD_EXPIRED` | `1` | both passwords must be changed at the first login |
+| `PASSWORD_EXPIRED` | `1` | both passwords must be changed at the first login (root's not if `SSH_AUTHORIZED_KEY` is set, since an expired password also blocks key logins) |
 | `KEYBOARD_LAYOUT` | `us` | XKB layout for console and desktop (`gb`, `de`, `se`, ...) |
 | `SSH_AUTHORIZED_KEY` | none (`remote-build.sh`: your key) | public key for root over SSH (root never logs in over SSH with a password) |
 | `EXTRA_PACKAGES` | | more Debian packages, space separated |

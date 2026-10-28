@@ -10,9 +10,17 @@ Uppdaterad 2026-10-28.
   markerar den bootade som lyckad. Kommandoraden kommer från `/etc/depthcharge-tools/config` (skriven av
   `install-emmc`), root= från fstab. boot-marker är avstängd på eMMC (den markerar alltid partition 1).
 - **Återställning:** ChromeOS-återställningssticka (Chromebook Recovery Utility, kenzo) finns hos användaren:
-  Esc+Uppdatera+Power. USB-stickan har image 20261028-0635 plus live-ändringar och bootar med Ctrl+U.
+  Esc+Uppdatera+Power. USB-stickan har image 20261028-1131 (publika standardvärden) och bootar med Ctrl+U.
 - Användarkonto (sudo); SSH `root@<chromebook-ip>` med PC:ns nyckel.
-- Bygget har ändringar som inte är ombyggda: e2fsprogs, rtkit, `etc/locale.conf` och den rättade `install-emmc`.
+- Publikt repo: https://github.com/olamellberg/chromebook-311-linux (`main`).
+- **Image 20261028-1131 testad från USB:** `user`/`user` tvingar fram nytt lösenord i LightDM (efter "Changing
+  password for user" frågar fältet efter det nuvarande lösenordet igen), layout `us`, `LANG=C.UTF-8`, glamor,
+  högtalare och `internal_mic` som standard. Fel: utgånget root-lösenord stoppade även SSH-nyckelinloggning;
+  rättat i `make-image.sh` (root går inte ut när `SSH_AUTHORIZED_KEY` är satt), inte ombyggt.
+- **Bluetooth kraschar ibland vid boot** (1 av 4 eMMC-boots, och första USB-booten med 20261028-1131): kärnan kör
+  QCA-setup, stänger av styrkretsen (auto-off), bluetoothd slår på den igen, andra setupen blir klar men nästa
+  HCI-kommando (0x0c14/0x1002) får tx timeout, sedan "crash the soc", memdump och `Frame reassembly failed (-84)`.
+  Varken `modprobe -r hci_uart` eller unbind/bind av `serial0-0` (3 s paus, enable-gpios) hjälper; bara omstart.
 
 ## Historik
 - Byggmiljön är flyttad från WSL2 (trasig: VT-x av) till en projektspecifik container på NUC:en, se `README.md`.

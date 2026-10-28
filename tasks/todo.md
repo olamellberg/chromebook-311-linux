@@ -54,6 +54,9 @@ Reservspår: egen kernel med pmOS-konfigurationen för kukui (`linux-postmarketo
 ### Fas 4: Få hårdvaran att fungera
 - [x] Wi-Fi, tangentbord och touchpad, ljud (högtalare, mikrofon), batteri, suspend (rtcwake) och bakgrundsbelysning (se HANDOFF.md)
 - [ ] Hörlurar (UCM saknar JackControl)
+- [ ] Bluetooth kraschar ibland vid boot efter andra QCA-setupen (tx timeout, memdump), se HANDOFF.md. Undersök:
+      lägre `max-speed` för UART:en (DT-overlay), att undvika auto-off mellan kärnans setup och bluetoothd, och om en
+      kall omstart (av/på) behövs
 - [x] Lock och strömknapp för suspend (logind-drop-in, testat 2026-10-28: suspend_stats success=2 fail=0)
 - [x] Skrivbordsmiljö: XFCE + LightDM + PipeWire (2026-10-28), användarkonto; Xorg-, WirePlumber- och mikrofonkonfig i build/rootfs
 

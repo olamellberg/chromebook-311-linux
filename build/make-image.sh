@@ -9,7 +9,7 @@
 # KERN_ATTRS (cgpt flags of KERN-A), EXTRA_CMDLINE, EXTRA_PACKAGES, IMG_COMPRESS (xz|none),
 # SSH_AUTHORIZED_KEY (a public key for root over SSH; password logins stay off), USER_NAME and USER_PASSWORD (the
 # desktop account; an empty USER_NAME makes none), PASSWORD_EXPIRED (1: both passwords must be changed at the first
-# login), KEYBOARD_LAYOUT (XKB layout, default us).
+# login; root's not when SSH_AUTHORIZED_KEY is set), KEYBOARD_LAYOUT (XKB layout, default us).
 set -euo pipefail
 
 SUITE=${SUITE:-trixie}
@@ -62,7 +62,9 @@ mmdebstrap --mode=root --architectures=arm64 --variant=minbase --include="$(echo
     --customize-hook='chroot "$1" systemctl enable boot-marker.service' \
     --customize-hook='if [ -n "$USER_NAME" ]; then chroot "$1" useradd -m -s /bin/bash -G "$USER_GROUPS" "$USER_NAME";
         echo "$USER_NAME:$USER_PASSWORD" | chroot "$1" chpasswd; fi' \
-    --customize-hook='[ "$PASSWORD_EXPIRED" = 0 ] || for u in root $USER_NAME; do chroot "$1" passwd -q -e "$u"; done' \
+    --customize-hook='[ "$PASSWORD_EXPIRED" = 0 ] || for u in root $USER_NAME; do
+        # an expired password also blocks key logins, so root stays reachable over SSH when a key is given
+        [ "$u" = root ] && [ -n "${SSH_AUTHORIZED_KEY:-}" ] || chroot "$1" passwd -q -e "$u"; done' \
     --customize-hook='if [ -n "${SSH_AUTHORIZED_KEY:-}" ]; then install -d -m 700 "$1"/root/.ssh;
         echo "$SSH_AUTHORIZED_KEY" > "$1"/root/.ssh/authorized_keys; chmod 600 "$1"/root/.ssh/authorized_keys; fi' \
     --customize-hook='chroot "$1" update-initramfs -u -k all' \
