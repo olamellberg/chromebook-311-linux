@@ -1,0 +1,12 @@
+# Build results (image, kernel, logs) and pulled copies
+out/
+*.img
+*.img.xz
+*.itb
+.pushed
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Playwright MCP browser logs
+.playwright-mcp/

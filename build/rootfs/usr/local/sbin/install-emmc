@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Installs the running Debian (booted from USB with Ctrl+U) on the internal eMMC, in place of ChromeOS.
+# ERASES THE WHOLE eMMC: ChromeOS and its user data. ChromeOS comes back only with a recovery USB stick
+# (Chromebook Recovery Utility) and the recovery screen (Esc+Refresh+Power).
+#
+# Layout: KERN-A and KERN-B (256 MiB each; depthchargectl writes an uncompressed 91 MB image) and ROOTFS on the
+# rest. The kernel goes to KERN-A with depthchargectl; on later kernel or initramfs updates its system hooks write
+# the other partition and keep the old one as fallback, and depthcharge-tools.service marks the booted one good.
+# Boot it with Ctrl+D at the developer-mode screen; Ctrl+U still boots USB.
+#
+#   install-emmc               the real install, asks for confirmation
+#   DISK=/dev/loopN install-emmc   test run against a loop device (losetup -P) instead of the eMMC
+set -euo pipefail
+
+DISK=${DISK:-/dev/mmcblk0}
+KERN_MIB=256
+CMDLINE=${CMDLINE:-console=tty1 rootwait rw panic=10}
+MNT=/mnt/install-emmc
+
+die() { echo "install-emmc: $*" >&2; exit 1; }
+log() { echo "== $*"; }
+part() { case $DISK in *[0-9]) echo "${DISK}p$1" ;; *) echo "$DISK$1" ;; esac; }
+
+[ "$(id -u)" = 0 ] || die "run as root"
+grep -qw cros_secure /proc/cmdline || die "not booted by depthcharge"
+[ "$(depthchargectl config board 2>/dev/null)" = kenzo ] || die "this is not a kenzo (CB311-11H)"
+[ -b "$DISK" ] || die "$DISK is not a block device"
+case $DISK in
+    /dev/loop*) ;;
+    *) [ "$(cat "/sys/block/${DISK#/dev/}/device/type" 2>/dev/null)" = MMC ] || die "$DISK is not the eMMC" ;;
+esac
+ROOT_SRC=$(findmnt -no SOURCE /)
+[ "/dev/$(lsblk -no PKNAME "$ROOT_SRC")" != "$DISK" ] || die "/ is on $DISK; boot from the USB stick"
+! lsblk -nro MOUNTPOINT "$DISK" | grep -q . || die "something on $DISK is mounted"
+# A test loop device's backing file sits on / and must not be copied into itself
+EXCLUDE=()
+case $DISK in /dev/loop*) EXCLUDE=(--exclude=".$(losetup -nO BACK-FILE "$DISK")") ;; esac
+KVER=$(uname -r)
+[ -f "/boot/vmlinuz-$KVER" ] || die "/boot/vmlinuz-$KVER is missing"
+
+lsblk -o NAME,SIZE,PARTLABEL,FSTYPE "$DISK"
+echo
+echo "Everything on $DISK will be erased (ChromeOS included). The system on $ROOT_SRC is copied there."
+read -rp "Type RADERA to go on: " answer
+[ "$answer" = RADERA ] || die "aborted, nothing was changed"
+LOG=/var/log/install-emmc.log
+exec > >(tee -a "$LOG") 2>&1
+echo "== $(date -Is) install-emmc DISK=$DISK (log: $LOG)"
+
+log "erase $DISK"
+blkdiscard -f "$DISK" || wipefs -a "$DISK"
+SECTORS=$(blockdev --getsz "$DISK")
+KERN_SECTORS=$(( KERN_MIB * 2048 ))
+ROOT_START=$(( 2048 + 2 * KERN_SECTORS ))
+ROOT_SECTORS=$(( (SECTORS - 34 - ROOT_START) / 2048 * 2048 ))   # the backup GPT takes the last 33 sectors
+ROOT_GUID=$(cat /proc/sys/kernel/random/uuid)
+cgpt create "$DISK"
+cgpt add -i 1 -b 2048 -s "$KERN_SECTORS" -t kernel -l KERN-A "$DISK"
+cgpt add -i 2 -b $(( 2048 + KERN_SECTORS )) -s "$KERN_SECTORS" -t kernel -l KERN-B "$DISK"
+cgpt add -i 3 -b "$ROOT_START" -s "$ROOT_SECTORS" -t data -l ROOTFS -u "$ROOT_GUID" "$DISK"
+cgpt boot -p "$DISK"
+blockdev --rereadpt "$DISK"
+udevadm settle
+
+log "rootfs: ext4 on $(part 3), copy of /"
+mkfs.ext4 -q -L ROOTFS "$(part 3)"
+mkdir -p "$MNT"
+mount "$(part 3)" "$MNT"
+trap 'umount "$MNT" 2>/dev/null || true' EXIT
+# --one-file-system leaves out /proc, /sys, /dev, /run and /tmp (their mount points stay, empty). The source is the
+# live system, so files come and go while tar reads: the caches and temp dirs are left out, and exit 1 from the
+# reading tar ("file changed as we read it", e.g. the journal) is accepted.
+set +e
+tar -C / --one-file-system "${EXCLUDE[@]}" --exclude='./var/tmp/*' --exclude='./var/cache/apt/archives/*.deb' \
+    --exclude='./home/*/.cache/*' --exclude='./root/.cache/*' \
+    --numeric-owner --acls --xattrs --xattrs-include='*' -cpf - . \
+    | tar -C "$MNT" --numeric-owner --acls --xattrs --xattrs-include='*' -xpf -
+TAR_STATUS=("${PIPESTATUS[@]}")
+set -e
+[ "${TAR_STATUS[0]}" -le 1 ] && [ "${TAR_STATUS[1]}" -eq 0 ] \
+    || die "copying / failed (tar exit ${TAR_STATUS[0]} reading, ${TAR_STATUS[1]} writing), see the messages above"
+echo "PARTUUID=$ROOT_GUID / ext4 defaults,noatime 0 1" > "$MNT/etc/fstab"
+# boot-marker always marks partition 1, which is right only for the single-kernel USB layout
+systemctl --root="$MNT" disable boot-marker.service
+
+# depthchargectl takes the command line from /proc/cmdline only for the running system; with --root it uses just
+# the config, and without one the kernel would get no console=, rootwait or rw. The config also serves the hooks on
+# the installed system, so every later kernel gets the same line (root= is added from fstab).
+mkdir -p "$MNT/etc/depthcharge-tools"
+cat > "$MNT/etc/depthcharge-tools/config" <<EOF
+# Written by install-emmc. Kernel command line for every image depthchargectl builds; root= comes from /etc/fstab.
+[depthcharge-tools]
+kernel-cmdline = $CMDLINE
+EOF
+
+log "kernel: depthchargectl -> $(part 1)"
+depthchargectl --root "$MNT" write --target "$(part 1)" "$KVER"
+KCMD=$(vbutil_kernel --verify "$(part 1)" | sed -n '/^Config:/{n;p}')
+echo "kernel command line: $KCMD"
+grep -qi "root=PARTUUID=$ROOT_GUID" <<< "$KCMD" || die "the kernel on $(part 1) does not point at root=PARTUUID=$ROOT_GUID"
+grep -q "console=tty1 .*rw" <<< "$KCMD" || die "the kernel on $(part 1) lacks console=tty1 or rw"
+cgpt show -i 1 "$DISK"
+
+umount "$MNT"
+trap - EXIT
+sync
+log "done: shut down, remove the USB stick, then Ctrl+D at the developer-mode screen"

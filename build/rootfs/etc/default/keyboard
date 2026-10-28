@@ -1,0 +1,7 @@
+# Keyboard layout for the console and X (console-setup, keyboard-configuration). The build sets XKBLAYOUT from
+# KEYBOARD_LAYOUT (default us); change later with: sudo dpkg-reconfigure keyboard-configuration
+XKBMODEL="pc105"
+XKBLAYOUT="us"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"

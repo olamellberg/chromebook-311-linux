@@ -1,0 +1,13 @@
+# Build environment for the Debian ARM64 USB image of the Acer CB311-11H (MT8183, jacuzzi/kenzo).
+# Debian trixie on the host architecture; the arm64 rootfs is built by mmdebstrap and runs its maintainer scripts
+# through the host's qemu-aarch64 binfmt entry (F flag, see scripts/nuc-host-setup.sh), so no qemu is needed here.
+FROM docker.io/library/debian:trixie
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        arch-test ca-certificates cgpt depthcharge-tools device-tree-compiler e2fsprogs file initramfs-tools-core \
+        lz4 mmdebstrap python3 u-boot-tools vboot-kernel-utils xz-utils zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LC_ALL=C.UTF-8
+WORKDIR /work

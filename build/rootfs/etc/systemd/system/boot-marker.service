@@ -1,0 +1,10 @@
+[Unit]
+Description=Record a successful boot (timestamp on the rootfs, vboot success flag on KERN-A)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/boot-marker
+
+[Install]
+WantedBy=multi-user.target

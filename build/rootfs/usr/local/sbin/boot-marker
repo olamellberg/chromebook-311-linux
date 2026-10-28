@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run by boot-marker.service once the system is up. Appends a line to /var/log/boot-ok (readable from ChromeOS,
+# which mounts the ext4 stick), then sets the success flag on partition 1 (KERN-A) of the disk the rootfs is on,
+# so vboot stops counting down its tries (the image is written with S=0, see build/make-image.sh).
+set -u
+echo "$(date -Is) $(uname -r) $(cat /proc/cmdline)" >> /var/log/boot-ok
+disk=/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE /)")
+if cgpt add -i 1 -S 1 "$disk"; then
+    echo "$(date -Is) KERN-A on $disk marked successful" >> /var/log/boot-ok
+fi
+sync

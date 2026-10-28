@@ -1,0 +1,51 @@
+# Loaded from the initramfs before the rootfs is mounted. Derived from the enabled nodes of
+# mt8183-kukui-jacuzzi-kenzo.dtb mapped to Debian 6.12.113 (trixie) drivers (docs/kernel-analysis.md).
+# Built-in (=y) in Debian, so not listed: pinctrl, scpsys power domains, pwrap, MT6358 PMIC + regulators, 8250 UART.
+# build/make-image.sh prints which of these really are in the initrd.
+
+# Clocks: Debian builds the MT8183 clock drivers as modules, and nothing below probes without them
+clk-mt8183
+clk-mt8183-apmixedsys
+clk-mt8183-mm
+# regulator-fixed (USB hub, panel and bridge supplies) is a module too
+fixed
+
+# USB stick -> rootfs. The xhci node is a child of the MTU3 (mediatek,mt8183-mtu3) node; the
+# USB-A port sits behind a Genesys hub (usb5e3,610) handled by onboard_usb_dev
+phy-mtk-tphy
+mtu3
+xhci-mtk-hcd
+onboard_usb_dev
+usb-storage
+uas
+sd_mod
+ext4
+
+# eMMC / SD card
+mtk-sd
+
+# Internal keyboard (cros-ec over SPI), for the initramfs emergency shell. Listed explicitly:
+# Debian MR !906 saw cros_ec_keyb sometimes not load on its own
+spi-mt65xx
+cros_ec
+cros_ec_spi
+cros_ec_keyb
+
+# Panel: DSI -> ANX7625 (I2C) -> eDP panel, PWM backlight. There is no firmware framebuffer on this
+# board (no simple-framebuffer node), so the screen stays black until these load.
+mtk-smi
+mtk-iommu
+mtk-cmdq-mailbox
+mtk-mmsys
+mtk-mutex
+nvmem_mtk-efuse
+phy-mtk-mipi-dsi-drv
+i2c-mt65xx
+mediatek-drm
+anx7625
+panel-edp
+pwm-mtk-disp
+pwm_bl
+
+# pstore (CONFIG_PSTORE_RAM=m): catches the log of a panic, if depthcharge adds a ramoops region
+ramoops
