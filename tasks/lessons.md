@@ -35,3 +35,14 @@
   (fil borta), och `set -euo pipefail` avbryter. Godta exit 1 från den läsande tar och uteslut cacher och temp-kataloger.
 - Skript som användaren kör i en terminal ska logga till fil (`exec > >(tee -a LOG) 2>&1`): utskriften i terminalen går
   inte att få tillbaka efteråt.
+
+## Bluetooth-felsökning: mät kretsens tillstånd innan en hypotes testas (2026-10-29)
+- En varm omstart, avstängning och EC-reset nollställer inte BT-kretsen (bt_en ligger kvar hög). En "fungerande" boot
+  var oftast en krets med firmware kvar från förra sessionen. Nollställ den för hand (bt_en låg 1 s) före varje test,
+  och läs nedladdningstiden: några ms för en 68 kB-rampatch betyder att inget laddades.
+- Läs UART-räknarna (`/proc/tty/driver/serial`: `oe:`, `fe:`) före och efter varje försök. Overruns förklarade
+  timeouts som annars såg ut som protokollfel (IBS, baudrate, firmware), och hypoteser om dem kostade flera omstarter.
+- Efter unbind/bind heter enheten hci1 och rfkill-numret ändras: hitta dem med `bluetoothctl list` och
+  `/sys/class/rfkill/*/type`, inte hci0/rfkill0.
+- `fdtput -t x` tolkar alla värden som hex. Mediateks sysirq (phandle 1) har 3 interrupt-celler. Hitta noder med
+  `fdtget -l` i stället för att gissa sökvägar.

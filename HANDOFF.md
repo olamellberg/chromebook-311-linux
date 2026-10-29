@@ -17,15 +17,53 @@ Uppdaterad 2026-10-28.
   password for user" frågar fältet efter det nuvarande lösenordet igen), layout `us`, `LANG=C.UTF-8`, glamor,
   högtalare och `internal_mic` som standard. Fel: utgånget root-lösenord stoppade även SSH-nyckelinloggning;
   rättat i `make-image.sh` (root går inte ut när `SSH_AUTHORIZED_KEY` är satt), inte ombyggt.
-- **Bluetooth kraschar ibland vid boot** (1 av 4 eMMC-boots, och första USB-booten med 20261028-1131): kärnan kör
-  QCA-setup, stänger av styrkretsen (auto-off), bluetoothd slår på den igen, andra setupen blir klar men nästa
-  HCI-kommando (0x0c14/0x1002) får tx timeout, sedan "crash the soc", memdump och `Frame reassembly failed (-84)`.
-  Varken `modprobe -r hci_uart` eller unbind/bind av `serial0-0` (3 s paus, enable-gpios) hjälper; bara omstart.
-  Efter omstarten var Bluetooth `off-blocked`: systemd-rfkill hade sparat soft=1
-  (`/var/lib/systemd/rfkill/platform-11003000.serial:bluetooth`) och lade tillbaka blocket. `echo 0 >
-  /sys/class/rfkill/rfkill0/soft` (eller av/på i blueman) och `bluetoothctl power on` → fungerar, sökning hittar
-  enheter. Även fungerande BT loggar "Malformed LE Event" / "unexpected HCI Event 0x00": tecken på bitfel på UART:en
-  (3 Mbaud).
+- **Bluetooth kraschar ofta, ej löst (felsökning pausad 2026-10-29).** Se avsnittet "Bluetooth: felsökning" nedan.
+  Efter en krasch sparar systemd-rfkill soft=1 (`/var/lib/systemd/rfkill/platform-11003000.serial:bluetooth`) och
+  lägger tillbaka blocket vid nästa boot: `echo 0 > /sys/class/rfkill/rfkillN/soft` (typ `bluetooth`) häver det.
+- **USB-stickan har testrester** från BT-felsökningen: `/etc/apt/sources.list.d/backports.list`, paketet
+  linux-image-7.2.11+deb13-arm64 (dess depthcharge-hook skriver om `/dev/sda1` vid kärnuppdateringar) och
+  `/root/bt-test/` (testkärnor och DTB:er). KERN-A är återställd till originalkärnan från 1131 (6.12). Allt försvinner
+  när stickan flashas med nästa image.
+
+## Bluetooth: felsökning (2026-10-29, pausad)
+QCA6174 (ROME) på UART1 (`serial@11003000`, serdev `serial0-0`, `hci_uart_qca`), bt_en = pio 120 (gpio-632).
+
+**Symptom:** setupen blir klar ("QCA setup on UART is completed"), alla små HCI-kommandon efteråt går igenom, men det
+första kommandot med ett stort svar (`0x0c14` Read Local Name, cirka 255 byte, ibland `0x1002`, cirka 68 byte) får
+tx timeout. Sedan "crash the soc", memdump med hundratals "missed packet" och `Frame reassembly failed (-84)`.
+
+**Vad som är visat:**
+- Det händer på **varje** setup med en nystartad krets (efter `qca_power_off`, efter bt_en låg i 1 s för hand eller
+  vid kall start), även med nytt drivrutinstillstånd (unbind/bind). Setup som "fungerar" är nästan alltid en krets som
+  redan körde firmware från förra sessionen (rampatchen "laddas" då på några ms, vilket är för snabbt för 68 kB).
+  Auto-off 2 s efter boot-setupen och av/på i blueman eller bluetoothctl ger alltså nästan alltid en krasch.
+- UART-räknaren (`/proc/tty/driver/serial`, raden för 11003000) visar `oe:` (overrun) i samma ögonblick: en setup
+  med 594 mottagna byte gav `oe:1`, och det tappade svaret är det långa paketet. H4-parsern väntar på resten, alltså
+  timeout. Grundorsaken är att RX-vägen tappar byte i PIO-läge (8250_mtk, ingen DMA, ST16650V2-FIFO).
+- Det är **inte** hastigheten: overruns och krascher finns på 3M, 2M och 1M (1M: `oe:4` på 588 byte, vilket
+  är omöjligt med vanlig avbrottslatens). Det är inte heller fbcon-loggning: `ignore_loglevel=N` och `dmesg -n 1` gav
+  samma krasch.
+- Det är **inte** kärnversionen (Debian 7.2.11 från trixie-backports beter sig likadant) och inte firmware:
+  rampatchen i Debian är byte-identisk med ChromeOS, NVM-filen är ChromeOS egen, och NVM:s HCI-tagg har rätt baudkod
+  (0x0e = 3M). DT-noden (bluetooth, clk32k) är identisk med ChromeOS 6.6, och ChromeOS hci_qca/btqca skiljer sig
+  bara med backports. ChromeOS har inte heller DMA på uart1.
+- 115200 baud går inte att testa: ROME-patchen skickas utan svar per segment, och 68 kB tar cirka 6 s, så HCI-kärnans
+  kommandotimer (2 s) löper ut.
+- Utan `enable-gpios` (bt_en alltid hög via pinctrl `output-high`) laddas firmware bara en gång per boot. Men en
+  hängd krets kan då aldrig nollställas, och av/på kraschade ändå på `0x0c14`. Det är ingen lösning.
+- APDMA (UART-DMA, upstream-nod i commit `5551862f57e5`, v7.3-rc1) med 6.12-drivrutinen: firmware-nedladdningen
+  får tx timeout, "flush: fail" och "Runtime PM usage count underflow".
+
+**Nästa steg:** testa APDMA med 7.2-kärnan. Testkärnan finns på stickan som `/root/bt-test/kernel-a72.img`
+(7.2-DTB + nod `dma-controller@11000780`, phandle 0xac, interrupts `0 6c 8 … 0 71 8` mot sysirq, clocks
+`<0x2b 0x2a>` = infracfg CLK_INFRA_AP_DMA, uart1 `dmas = <0xac 2 0xac 3>`). Skriv den till KERN-A med `dd`, boota med
+Ctrl+U och kör av/på-stresstestet; räkna `oe:` och setuper. Fungerar det blir lösningen backports-kärnan plus
+DTB-patch i bygget (och en hook så att depthchargectl använder den patchade DTB:n vid kärnuppdateringar). Annars:
+en fråga till linux-mediatek / linux-bluetooth med spåret ovan.
+
+Hjälpmedel: `echo "file hci_qca.c +pt; file hci_h4.c +pt" > /sys/kernel/debug/dynamic_debug/control` ger IBS- och
+H4-spår; `/sys/kernel/debug/bluetooth/hci0/ibs/` visar IBS-tillståndet. Nollställ kretsen för hand: unbind
+`serial0-0`, `gpio-632` låg 1 s (sysfs export), bind.
 
 ## Historik
 - Byggmiljön är flyttad från WSL2 (trasig: VT-x av) till en projektspecifik container på NUC:en, se `README.md`.
@@ -47,7 +85,7 @@ Uppdaterad 2026-10-28.
 | Batteri och laddning (cros-ec, sbs) | fungerar |
 | GPU (panfrost, Mali-G72) | fungerar: Xorg glamor på Mali-G72. Xorg behöver `etc/X11/xorg.conf.d/20-mediatek.conf` (PrimaryGPU på mediatek-drm), annars "Cannot run in framebuffer mode" |
 | CPU-frekvens, CCI, GPU devfreq | fungerar: `governor_passive` + `mediatek-cpufreq` i modules-load.d (autoladdas aldrig); 793–1989 MHz, CCI passive, GPU simple_ondemand |
-| Bluetooth (QCA6174 UART) | fungerar (sökning: 15 enheter) med ChromeOS `nvm_00440302_i2s.bin`; `_i2s_eu` från Debian ger HCI-timeouts. Bygget hämtar filen (`build/fetch-firmware.py`, sha256-pinnad). Enstaka "Frame reassembly"-varningar |
+| Bluetooth (QCA6174 UART) | opålitlig: kraschar efter setup med nystartad krets (RX-overruns), se "Bluetooth: felsökning". Bygget hämtar ChromeOS `nvm_00440302_i2s.bin` (`build/fetch-firmware.py`, sha256-pinnad); att `_i2s_eu` "gav HCI-timeouts" var troligen samma fel |
 | SVS (spänningsoptimering) | ger upp: DT saknar termisk zon `gpu-thermal` (lucka i upstream-DT). Inte nödvändig |
 | Ljud: högtalare | fungerar, båda kanaler (Debians alsa-ucm-conf har profilen mt8183_mt6358_ts3a227_max98357: verb HiFi, Speaker via I2S3 → max98357a) |
 | Ljud: inbyggd mikrofon | fungerar (DMIC, UCM "Mic"). Bara FL har signal, låg nivå (−42 dBFS vid tal). PipeWire-källan "Inbyggd mikrofon" (`etc/pipewire/pipewire.conf.d/50-internal-mic.conf`) tar FL, +20 dB, mono, standardkälla |

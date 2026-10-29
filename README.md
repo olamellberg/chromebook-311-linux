@@ -17,7 +17,7 @@ Tested on a CB311-11H (HWID `KENZO-IGRW`, firmware `Google_Juniper 12573.202.0`)
 | Display (eDP 1366×768), backlight | works |
 | GPU (Mali-G72, panfrost) | works: Xorg with glamor acceleration |
 | Wi-Fi (QCA6174, SDIO) | works, 2.4 and 5 GHz |
-| Bluetooth (QCA6174, UART) | works (needs a firmware file Debian lacks; the build fetches it from ChromiumOS) |
+| Bluetooth (QCA6174, UART) | unreliable: often crashes when switched on or after boot (UART receive overruns; under investigation). If it shows as blocked after a crash: `echo 0 \| sudo tee /sys/class/rfkill/rfkill*/soft`, then switch it on. The build fetches a firmware file Debian lacks from ChromiumOS |
 | Keyboard, touchpad, volume keys | work |
 | Battery and charging | work |
 | CPU frequency scaling (793–1989 MHz), CCI and GPU devfreq | work |
